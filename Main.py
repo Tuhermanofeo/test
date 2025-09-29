@@ -104,7 +104,7 @@ def manage_hping3_interactive():
 
     try:
         # Saludo animado
-        print(M("♪♫") + " " + C("¡Vamos a revisar hping3! ✨") + " " + M("♫♪"))
+        print(M("🛠") + " " + C("Testeando hping3") + " " + M("🛠"))
 
         ok, info = check_hping()
         if ok:
@@ -153,7 +153,7 @@ def manage_hping3_interactive():
             return result
 
         # Pedir objetivo y parámetros
-        print("\n" + C("🚀 Preparar ejecución de hping3 (solo si estás autorizado)"))
+        print("\n" + C(" Preparar ejecución de hping3 (solo si estás autorizado)"))
         while True:
             target = input(G("Objetivo (IP/host) [ej. 192.0.2.1, localhost, ejemplo.com]: ")).strip()
             if valid_host(target):
@@ -174,13 +174,13 @@ def manage_hping3_interactive():
 
         confirm = input(G("Confirmación (frase exacta para ejecutar; cualquier otra cosa cancela): ")).strip()
         if confirm != "I HAVE AUTHORIZATION":
-            print(Y("❎ Frase de autorización incorrecta — No se ejecutará el comando."))
+            print(Y("❌ Frase de autorización incorrecta — No se ejecutará el comando."))
             print(B("Comando preparado (puedes copiar/pegar más tarde):"))
             print(M(final_cmd))
             return result
 
         # Cuenta regresiva vistosa
-        print("\n" + C("✨ Preparando ejecución... (Ctrl-C para cancelar)"))
+        print("\n" + C(" Preparando ejecución... (Ctrl-C para cancelar)"))
         try:
             for i in range(3, 0, -1):
                 print(B(f"  Ejecutando en {i}... ") + ("•" * (4 - i)), end="\r", flush=True)
@@ -221,5 +221,5 @@ def manage_hping3_interactive():
 print("1.- test")
 opcion = input("ingrese opcion: ")
 
-if opcion == 1:
+if opcion == '1':
   manage_hping3_interactive()
