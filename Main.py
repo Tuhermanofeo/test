@@ -1,103 +1,103 @@
 import requests
 from bs4 import BeautifulSoup
 import sys
+import re # Para limpiar el texto extraído
 
 def consultar_placa_ecuador(placa):
     """
-    Intenta automatizar la consulta de información vehicular básica y gratuita 
-    en la web ecuadorlegalonline.com.
+    Intenta automatizar la consulta de información vehicular básica (gratuita)
+    en el portal 'https://tramites.ecuadorlegalonline.com/sri/consultar-dueno-de-carro/'
 
     Argumentos:
         placa (str): El número de placa del vehículo (ej: 'ABC1234').
     """
-    # URL de la página que contiene el formulario de consulta. 
-    # A menudo, la URL de envío es la misma o una subpágina.
-    URL = 'https://tramites.ecuadorlegalonline.com/sri/consultar-dueno-de-carro/'
     
-    # 1. Definición de Headers y Payload (los datos a enviar)
-    # Los headers simulan un navegador real.
+    # URL de destino de la petición POST. Se asume que es la misma página.
+    URL = 'https://tramites.ecuadorlegalonline.com/sri/consultar-dueno-de-carro/'
+
+    # 1. Definición de Headers
+    # Simula un navegador móvil (común en Termux) para evitar bloqueos.
     headers = {
         'User-Agent': 'Mozilla/5.0 (Linux; Android 10; Termux) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.210 Mobile Safari/537.36',
         'Referer': URL,
+        # Importante: Content-Type indica el formato de los datos que se envían.
         'Content-Type': 'application/x-www-form-urlencoded',
     }
 
-    # El 'payload' o 'data' debe coincidir con los campos del formulario de la web.
-    # Los nombres de los campos ('placa', 'btn_consultar') son una suposición y podrían variar.
+    # 2. Definición del Payload (Datos a enviar)
+    # >>> ATENCIÓN: AJUSTAR ESTOS NOMBRES SI EL SCRIPT NO FUNCIONA <<<
+    # Deben coincidir con los campos 'name' del formulario HTML de la web.
     payload = {
-        'placa': placa,
-        'btn_consultar': 'Consultar' # Nombre del botón si lo hay
+        'placa': placa.upper(),       # <--- AJUSTAR AQUÍ (Nombre del campo de texto de la placa)
+        'btn_consultar': 'Consultar'  # <--- AJUSTAR AQUÍ (Nombre del botón de consulta)
     }
 
-    print(f"\n[🔍] Consultando información pública para la placa: {placa}...")
+    print(f"\n[🔍] Consultando información pública para la placa: {placa.upper()}...")
+    print("-" * 50)
     
     try:
-        # 2. Enviar la petición POST al servidor
-        response = requests.post(URL, data=payload, headers=headers, timeout=10)
+        # Enviar la petición POST con los datos del formulario
+        response = requests.post(URL, data=payload, headers=headers, timeout=15)
         
-        # 3. Verificar si la consulta fue exitosa
         if response.status_code != 200:
-            print(f"[❌] Error al conectar. Código de estado HTTP: {response.status_code}")
+            print(f"[❌] Error de conexión. Código HTTP: {response.status_code}")
             return
 
-        # 4. Procesar la respuesta HTML
+        # 3. Procesar la respuesta HTML
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # --- Lógica de Extracción (Web Scraping) ---
-        # ATENCIÓN: Esta parte es la más inestable. Debes inspeccionar el código
-        # HTML de la página de resultados para encontrar la clase o ID correcta
-        # donde se muestran los datos (Marca, Modelo, Año, etc.).
+        # 4. Lógica de Extracción (Scraping)
+        # >>> ATENCIÓN: AJUSTAR ESTAS CLASES/IDs SI EL SCRIPT NO FUNCIONA <<<
+        
+        # Buscar el contenedor principal que tiene la información de resultados
+        # Se busca un <div> que contenga la información vehicular
+        contenedor_info = soup.find('div', class_='resultado-consulta') # <--- AJUSTAR AQUÍ (Clase o ID del contenedor)
 
-        # Intentaremos buscar un elemento común que contenga el resultado (ej: una tabla o div de resultados)
-        
-        # Aquí se asume que los datos están en una tabla o lista de detalles.
-        # EJEMPLO DE EXTRACCIÓN (ajusta estas etiquetas a lo que veas en el HTML real):
-        
-        # Buscar la tabla de detalles del vehículo (si existe un ID o clase específica)
-        info_gratuita = soup.find('div', class_='resultado_vehiculo') 
-        
-        if info_gratuita:
-            print("\n[✅] Información Vehicular Básica (Gratuita):")
-            
-            # Intenta imprimir el texto dentro del div de resultados
-            # Esto puede necesitar refinamiento para extraer datos específicos (Marca, Modelo)
-            print("---------------------------------------------")
-            
-            # --- Intento de extracción detallada (ejemplo teórico) ---
-            
-            # Simular la búsqueda de la marca
-            marca_tag = info_gratuita.find('span', string='Marca:')
-            marca = marca_tag.find_next_sibling('span').text if marca_tag and marca_tag.find_next_sibling('span') else "No encontrada"
+        if not contenedor_info:
+            # Si no se encuentra el contenedor, puede que la placa no exista o el scraping esté roto.
+            print("[⚠️] No se pudo encontrar el bloque de resultados.")
+            print("Posibles causas: Placa no registrada, o la estructura HTML ha cambiado.")
+            return
 
-            # Simular la búsqueda del modelo
-            modelo_tag = info_gratuita.find('span', string='Modelo:')
-            modelo = modelo_tag.find_next_sibling('span').text if modelo_tag and modelo_tag.find_next_sibling('span') else "No encontrado"
+        # --- Extracción de Campos Específicos ---
+        
+        datos_encontrados = {}
+        
+        # Estos sitios a menudo usan etiquetas <strong>, <b> o <span> para etiquetar datos.
+        # Buscaremos todos los pares de etiquetas dentro del contenedor
+        
+        # Ejemplo de extracción para Marca, Modelo, Color, etc. (Puede variar)
+        campos = contenedor_info.find_all(['b', 'strong', 'span']) 
+
+        for i in range(0, len(campos) - 1, 2):
+            etiqueta = campos[i].text.strip().replace(':', '')
+            valor = campos[i+1].text.strip()
             
-            # Simular la búsqueda del año
-            anio_tag = info_gratuita.find('span', string='Año:')
-            anio = anio_tag.find_next_sibling('span').text if anio_tag and anio_tag.find_next_sibling('span') else "No encontrado"
+            # Limpiar el valor de posibles saltos de línea y espacios excesivos
+            valor = re.sub(r'\s+', ' ', valor)
             
-            print(f"  Placa: {placa}")
-            print(f"  Marca: {marca}")
-            print(f"  Modelo: {modelo}")
-            print(f"  Año:   {anio}")
-            
-            print("\n[⚠️] Recordatorio: Los datos sensibles (nombre, cédula) están ocultos o son de pago.")
-            
+            # Solo guardamos si la etiqueta es relevante y el valor no es vacío
+            if etiqueta and valor and etiqueta not in ['Nombre', 'Cédula', 'Email']: # Excluir datos privados
+                datos_encontrados[etiqueta] = valor
+
+        # 5. Mostrar Resultados
+        
+        if datos_encontrados:
+            print("[✅] Información de la Placa Obtenida:")
+            for key, value in datos_encontrados.items():
+                print(f"  {key:<20}: {value}")
         else:
-            # Si no encuentra el div de resultados, puede que la placa no exista o la estructura HTML haya cambiado.
-            print("[🧐] No se pudo encontrar el bloque de resultados. La placa no existe o el código HTML de la web ha cambiado.")
+            print("[⚠️] El contenedor se encontró, pero no se extrajo información útil.")
             
     except requests.exceptions.RequestException as e:
-        print(f"[❌] Ocurrió un error en la solicitud: {e}")
+        print(f"[❌] Error en la solicitud de red: {e}")
     except Exception as e:
-        print(f"[❌] Ocurrió un error en el procesamiento: {e}")
+        print(f"[❌] Error inesperado durante el procesamiento: {e}")
 
 if __name__ == '__main__':
-    # Verifica que se haya pasado la placa como argumento
     if len(sys.argv) < 2:
-        print("Uso: python placa_ec.py [NUMERO_DE_PLACA]")
-        print("Ejemplo: python placa_ec.py ABC1234")
+        print("Uso: python placa_ec_completo.py [NUMERO_DE_PLACA]")
+        print("Ejemplo: python placa_ec_completo.py PBR1234")
         sys.exit(1)
     
     placa_a_consultar = sys.argv[1]
