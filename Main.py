@@ -1,225 +1,104 @@
-def manage_hping3_interactive():
+import requests
+from bs4 import BeautifulSoup
+import sys
+
+def consultar_placa_ecuador(placa):
     """
-    Versión "con color y vida" de la función interactiva para comprobar/instalar hping3
-    y preparar/ejecutar un comando.
+    Intenta automatizar la consulta de información vehicular básica y gratuita 
+    en la web ecuadorlegalonline.com.
 
-    - Igual comportamiento funcional que antes (no hace sys.exit; devuelve un dict con resultados).
-    - Salidas más vívidas: colores ANSI, emojis y mensajes amistosos.
-    - Todavía exige la frase exacta "I HAVE AUTHORIZATION" para ejecutar.
-    - Diseñada para pegar dentro de un script existente.
+    Argumentos:
+        placa (str): El número de placa del vehículo (ej: 'ABC1234').
     """
-    import subprocess, shutil, ipaddress, getpass, time, re, sys, os
-
-    # -----------------------
-    # Helpers de color/estilo
-    # -----------------------
-    def supports_color():
-        # Detecta soporte de color (tty o terminal que soporte ANSI)
-        if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
-            return False
-        if os.name == "nt":
-            # Intentar habilitar VT processing en Windows 10+ para que ANSI funcione
-            try:
-                import ctypes
-                kernel32 = ctypes.windll.kernel32
-                handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
-                mode = ctypes.c_uint()
-                if kernel32.GetConsoleMode(handle, ctypes.byref(mode)) != 0:
-                    kernel32.SetConsoleMode(handle, mode.value | 0x0004)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
-                    return True
-            except Exception:
-                return False
-        return True
-
-    USE_COLOR = supports_color()
-
-    def c(text, code):
-        return f"\033[{code}m{text}\033[0m" if USE_COLOR else text
-
-    # color palette
-    G = lambda s: c(s, "32")   # green
-    Y = lambda s: c(s, "33")   # yellow
-    R = lambda s: c(s, "31")   # red
-    B = lambda s: c(s, "34")   # blue
-    M = lambda s: c(s, "35")   # magenta / fancy
-    C = lambda s: c(s, "36")   # cyan
-    U = lambda s: c(s, "4;37") # underlined-ish white
-
-    # -----------------------
-    # Comportamiento principal
-    # -----------------------
-    MANAGERS_CMDS = {
-        "pkg":     "pkg install -y hping3",
-        "apt":     "sudo apt update && sudo apt install -y hping3",
-        "apt-get": "sudo apt-get update && sudo apt-get install -y hping3",
-        "yum":     "sudo yum install -y hping3",
-        "dnf":     "sudo dnf install -y hping3",
-        "pacman":  "sudo pacman -Syu --noconfirm hping3",
-        "zypper":  "sudo zypper install -y hping3",
-        "apk":     "sudo apk add hping",  # Alpine suele llamar al paquete 'hping'
-        "emerge":  "sudo emerge --sync && sudo emerge -avh net-analyzer/hping",
-        "snap":    "sudo snap install hping3 || true",
-        "brew":    "brew install hping || brew install hping3 || true",
+    # URL de la página que contiene el formulario de consulta. 
+    # A menudo, la URL de envío es la misma o una subpágina.
+    URL = 'https://tramites.ecuadorlegalonline.com/sri/consultar-dueno-de-carro/'
+    
+    # 1. Definición de Headers y Payload (los datos a enviar)
+    # Los headers simulan un navegador real.
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; Termux) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.210 Mobile Safari/537.36',
+        'Referer': URL,
+        'Content-Type': 'application/x-www-form-urlencoded',
     }
 
-    def run_cmd(cmd, timeout=300, shell=True):
-        try:
-            r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               timeout=timeout, shell=shell, universal_newlines=True)
-            out = (r.stdout or r.stderr or "").strip()
-            return r.returncode, out
-        except subprocess.TimeoutExpired:
-            return 124, "timeout"
-        except Exception as e:
-            return 1, str(e)
+    # El 'payload' o 'data' debe coincidir con los campos del formulario de la web.
+    # Los nombres de los campos ('placa', 'btn_consultar') son una suposición y podrían variar.
+    payload = {
+        'placa': placa,
+        'btn_consultar': 'Consultar' # Nombre del botón si lo hay
+    }
 
-    def check_hping():
-        if shutil.which("hping3") is None:
-            return False, "hping3 no está en PATH"
-        code, out = run_cmd("hping3 --version", timeout=10)
-        if code == 0:
-            first = out.splitlines()[0] if out else "versión desconocida"
-            return True, first
-        return False, out or f"salida con código {code}"
-
-    def detect_managers():
-        found = []
-        for m in MANAGERS_CMDS:
-            if shutil.which(m):
-                found.append(m)
-        return found
-
-    def valid_host(s):
-        s = s.strip()
-        if s.lower() == "localhost":
-            return True
-        try:
-            ipaddress.ip_address(s)
-            return True
-        except ValueError:
-            return bool(re.fullmatch(r"[A-Za-z0-9.-]{1,253}", s))
-
-    # Resultado (no hace sys.exit)
-    result = {"installed": False, "final_cmd": None, "executed": False, "returncode": None, "error": None}
-
+    print(f"\n[🔍] Consultando información pública para la placa: {placa}...")
+    
     try:
-        # Saludo animado
-        print(M("🛠") + " " + C("Testeando hping3") + " " + M("🛠"))
+        # 2. Enviar la petición POST al servidor
+        response = requests.post(URL, data=payload, headers=headers, timeout=10)
+        
+        # 3. Verificar si la consulta fue exitosa
+        if response.status_code != 200:
+            print(f"[❌] Error al conectar. Código de estado HTTP: {response.status_code}")
+            return
 
-        ok, info = check_hping()
-        if ok:
-            print(G("✅ hping3 encontrado:"), B(info))
-            result["installed"] = True
+        # 4. Procesar la respuesta HTML
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # --- Lógica de Extracción (Web Scraping) ---
+        # ATENCIÓN: Esta parte es la más inestable. Debes inspeccionar el código
+        # HTML de la página de resultados para encontrar la clase o ID correcta
+        # donde se muestran los datos (Marca, Modelo, Año, etc.).
+
+        # Intentaremos buscar un elemento común que contenga el resultado (ej: una tabla o div de resultados)
+        
+        # Aquí se asume que los datos están en una tabla o lista de detalles.
+        # EJEMPLO DE EXTRACCIÓN (ajusta estas etiquetas a lo que veas en el HTML real):
+        
+        # Buscar la tabla de detalles del vehículo (si existe un ID o clase específica)
+        info_gratuita = soup.find('div', class_='resultado_vehiculo') 
+        
+        if info_gratuita:
+            print("\n[✅] Información Vehicular Básica (Gratuita):")
+            
+            # Intenta imprimir el texto dentro del div de resultados
+            # Esto puede necesitar refinamiento para extraer datos específicos (Marca, Modelo)
+            print("---------------------------------------------")
+            
+            # --- Intento de extracción detallada (ejemplo teórico) ---
+            
+            # Simular la búsqueda de la marca
+            marca_tag = info_gratuita.find('span', string='Marca:')
+            marca = marca_tag.find_next_sibling('span').text if marca_tag and marca_tag.find_next_sibling('span') else "No encontrada"
+
+            # Simular la búsqueda del modelo
+            modelo_tag = info_gratuita.find('span', string='Modelo:')
+            modelo = modelo_tag.find_next_sibling('span').text if modelo_tag and modelo_tag.find_next_sibling('span') else "No encontrado"
+            
+            # Simular la búsqueda del año
+            anio_tag = info_gratuita.find('span', string='Año:')
+            anio = anio_tag.find_next_sibling('span').text if anio_tag and anio_tag.find_next_sibling('span') else "No encontrado"
+            
+            print(f"  Placa: {placa}")
+            print(f"  Marca: {marca}")
+            print(f"  Modelo: {modelo}")
+            print(f"  Año:   {anio}")
+            
+            print("\n[⚠️] Recordatorio: Los datos sensibles (nombre, cédula) están ocultos o son de pago.")
+            
         else:
-            print(Y("⚠️  hping3 no disponible:"), info)
-            managers = detect_managers()
-            if not managers:
-                print(Y("🤔 No se detectaron gestores de paquetes conocidos en PATH."))
-            else:
-                print(C("🔎 Gestores detectados:"), ", ".join(managers))
-                for m in managers:
-                    cmd = MANAGERS_CMDS.get(m)
-                    if not cmd:
-                        continue
-                    print("\n" + M("➤") + " " + B(f"Gestor detectado: {m}"))
-                    print(Y(f"  Comando propuesto: {cmd}"))
-                    ans = input(G("¿Intentar instalar con este gestor? [y/N]: ")).strip().lower()
-                    if ans not in ("y", "yes"):
-                        print(C("  → Omitido. Siguiente..."))
-                        continue
-                    print(C("  Ejecutando... (puede pedir contraseña sudo)"))
-                    code, out = run_cmd(cmd, timeout=900, shell=True)
-                    if out:
-                        # Mostrar solo las primeras líneas para no saturar
-                        preview = "\n".join(out.splitlines()[:8])
-                        if len(out.splitlines()) > 8:
-                            preview += "\n" + C("  ...(salida truncada)")
-                        print(B(f"  Salida ({m}):\n") + preview)
-                    print(C(f"  Código de salida: {code}"))
-                    ok, info = check_hping()
-                    if ok:
-                        print(G("🎉 Instalación detectada correctamente:"), B(info))
-                        result["installed"] = True
-                        break
-                    else:
-                        print(R("  ❌ hping3 aún no disponible tras este intento."))
-
-        # Última verificación
-        ok, info = check_hping()
-        if not ok:
-            result["error"] = f"hping3 no disponible: {info}"
-            print(R("⛔") + " " + R(result["error"]))
-            print(M("Si lo deseas, instala hping3 manualmente y vuelve a ejecutar esta función."))
-            return result
-
-        # Pedir objetivo y parámetros
-        print("\n" + C(" Preparar ejecución de hping3 (solo si estás autorizado)"))
-        while True:
-            target = input(G("Objetivo (IP/host) [ej. 192.0.2.1, localhost, ejemplo.com]: ")).strip()
-            if valid_host(target):
-                break
-            print(R("Formato inválido — intenta de nuevo."))
-
-        params = input(G("Parámetros para hping3 (ej. -S -p 80 -c 5) [vacío = ninguno]: ")).strip()
-
-        need_sudo = (getpass.getuser() != "root")
-        prefix = "sudo " if need_sudo else ""
-        final_cmd = f"{prefix}hping3 {params} {target}".strip()
-        result["final_cmd"] = final_cmd
-
-        # Mensaje de advertencia coloreado y animado
-        print("\n" + Y("⚠️  AVISO IMPORTANTE:") + " " + R("No ejecutes esto contra objetivos sin autorización explícita."))
-        print(C("Si realmente tienes permiso y deseas ejecutar el comando ahora, escribe exactamente:"))
-        print(U('  I HAVE AUTHORIZATION'))
-
-        confirm = input(G("Confirmación (frase exacta para ejecutar; cualquier otra cosa cancela): ")).strip()
-        if confirm != "I HAVE AUTHORIZATION":
-            print(Y("❌ Frase de autorización incorrecta — No se ejecutará el comando."))
-            print(B("Comando preparado (puedes copiar/pegar más tarde):"))
-            print(M(final_cmd))
-            return result
-
-        # Cuenta regresiva vistosa
-        print("\n" + C(" Preparando ejecución... (Ctrl-C para cancelar)"))
-        try:
-            for i in range(3, 0, -1):
-                print(B(f"  Ejecutando en {i}... ") + ("•" * (4 - i)), end="\r", flush=True)
-                time.sleep(1)
-            print(" " * 40, end="\r")  # limpiar línea
-        except KeyboardInterrupt:
-            print(R("\n✋ Ejecución cancelada por usuario."))
-            return result
-
-        # Ejecutar y mostrar
-        print(G("▶ Ejecutando: ") + M(final_cmd))
-        # Nota sobre seguridad: usamos shell=True para respetar parámetros tal cual; se asume confianza en la entrada.
-        try:
-            proc = subprocess.Popen(final_cmd, shell=True)
-            proc.wait()
-            result["executed"] = True
-            result["returncode"] = proc.returncode
-            if proc.returncode == 0:
-                print(G(f"✅ Proceso finalizó con código {proc.returncode}."))
-            else:
-                print(R(f"❌ Proceso finalizó con código {proc.returncode}."))
-            return result
-        except KeyboardInterrupt:
-            print(R("\n✋ Ejecución interrumpida por usuario (SIGINT)."))
-            result["error"] = "interrumpido por usuario"
-            return result
-        except Exception as e:
-            result["error"] = str(e)
-            print(R("⚠️ Error al ejecutar el comando:"), str(e))
-            return result
-
+            # Si no encuentra el div de resultados, puede que la placa no exista o la estructura HTML haya cambiado.
+            print("[🧐] No se pudo encontrar el bloque de resultados. La placa no existe o el código HTML de la web ha cambiado.")
+            
+    except requests.exceptions.RequestException as e:
+        print(f"[❌] Ocurrió un error en la solicitud: {e}")
     except Exception as e:
-        result["error"] = str(e)
-        print(R("💥 Ha ocurrido un error inesperado:"), str(e))
-        return result
+        print(f"[❌] Ocurrió un error en el procesamiento: {e}")
 
-
-print("1.- test")
-opcion = input("ingrese opcion: ")
-
-if opcion == '1':
-  manage_hping3_interactive()
+if __name__ == '__main__':
+    # Verifica que se haya pasado la placa como argumento
+    if len(sys.argv) < 2:
+        print("Uso: python placa_ec.py [NUMERO_DE_PLACA]")
+        print("Ejemplo: python placa_ec.py ABC1234")
+        sys.exit(1)
+    
+    placa_a_consultar = sys.argv[1]
+    consultar_placa_ecuador(placa_a_consultar)
